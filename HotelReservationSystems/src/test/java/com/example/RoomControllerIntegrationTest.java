@@ -1,4 +1,4 @@
-package com.example.testroom;
+package com.example;
 
 import com.example.hotelbooking.dto.hotel.HotelRequestDto;
 import com.example.hotelbooking.dto.hotel.HotelResponseDto;
