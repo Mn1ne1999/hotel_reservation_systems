@@ -3,6 +3,7 @@ package com.example.hotelbooking.controller;
 import com.example.hotelbooking.dto.PagedResponseDto;
 import com.example.hotelbooking.dto.hotel.HotelRequestDto;
 import com.example.hotelbooking.dto.hotel.HotelResponseDto;
+import com.example.hotelbooking.dto.hotel.RatingUpdateRequestDto;
 import com.example.hotelbooking.entity.Hotel;
 import com.example.hotelbooking.mapper.HotelMapper;
 import com.example.hotelbooking.service.HotelService;
@@ -34,7 +35,7 @@ public class HotelController {
         Hotel hotel = hotelMapper.toEntity(requestDto);
         // Изначально рейтинг = 0, ratingCount = 0 (или инициализируем в конструкторе)
         hotel.setRating(0.0);
-        hotel.setRatingCount(0);
+        hotel.setNumberOfRatings(0);
 
         // Сохраняем
         Hotel savedHotel = hotelService.createHotel(hotel);
@@ -69,6 +70,20 @@ public class HotelController {
         // Преобразуем DTO в сущность (только поля, которые можно менять)
         Hotel hotelData = hotelMapper.toEntity(requestDto);
         Hotel updatedHotel = hotelService.updateHotel(id, hotelData);
+        return ResponseEntity.ok(hotelMapper.toResponseDto(updatedHotel));
+    }
+    /**
+     * Эндпоинт для обновления рейтинга отеля.
+     * Доступен для обычных пользователей и администраторов.
+     * Принимает новый балл (newMark) и обновляет средний рейтинг.
+     */
+    @PostMapping("/{id}/rating")
+    public ResponseEntity<HotelResponseDto> updateRating(@PathVariable Long id, @RequestBody RatingUpdateRequestDto requestDto) {
+        // Проверяем, что новая оценка находится в диапазоне от 1 до 5
+        if (requestDto.getNewMark() < 1 || requestDto.getNewMark() > 5) {
+            return ResponseEntity.badRequest().build();
+        }
+        Hotel updatedHotel = hotelService.updateHotelRating(id, requestDto.getNewMark());
         return ResponseEntity.ok(hotelMapper.toResponseDto(updatedHotel));
     }
 

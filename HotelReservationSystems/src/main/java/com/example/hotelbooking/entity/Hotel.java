@@ -31,8 +31,9 @@ public class Hotel {
     private Double distanceFromCenter;
 
     // Рейтинг (от 1 до 5). Для удобства используем Double, чтобы хранить среднее значение.
-    private Double rating;
+    private Double rating = 0.0;
 
     // Количество оценок, на основе которых рассчитан рейтинг
-    private Integer ratingCount;
+    private Integer numberOfRatings = 0;
+
 }
