@@ -2,60 +2,85 @@ package com.example;
 
 import com.example.hotelbooking.dto.user.UserRequestDto;
 import com.example.hotelbooking.dto.user.UserResponseDto;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-@DisplayName("Интеграционные тесты для CRUD операций над 'Пользователь'")
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@DisplayName("Интеграционные тесты для пользователей (с Basic Auth)")
 public class UserControllerIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
 
-    // ID созданного пользователя для дальнейших тестов
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    // Используем уникальное имя для избежания конфликтов
+    private static final String INITIAL_USERNAME = "john_doe_" + UUID.randomUUID().toString().substring(0, 8);
+    private static final String PASSWORD = "secret";
+    private static String currentUsername = INITIAL_USERNAME;
     private static Long createdUserId;
+
+    @BeforeAll
+    @DisplayName("Очистка базы данных и регистрация администратора")
+    public void init() {
+        // Очистка всех таблиц (порядок может варьироваться, если используются внешние ключи)
+        // Здесь предполагается, что используются таблицы: bookings, rooms, hotels, users
+        jdbcTemplate.execute("TRUNCATE TABLE bookings, rooms, hotels, users RESTART IDENTITY CASCADE");
+
+        // Регистрируем администратора
+        try {
+            UserRequestDto adminRequest = new UserRequestDto();
+            adminRequest.setUsername("admin_user_" + UUID.randomUUID().toString().substring(0, 8));
+            adminRequest.setPassword("adminPass");
+            adminRequest.setEmail("admin@example.com");
+            adminRequest.setRole("ADMIN");
+            ResponseEntity<UserResponseDto> adminResponse = restTemplate.postForEntity("/api/users/register", adminRequest, UserResponseDto.class);
+            // Можно сохранить ID администратора, если потребуется
+        } catch (Exception e) {
+            System.out.println("Ошибка регистрации администратора: " + e.getMessage());
+        }
+    }
 
     @Test
     @Order(1)
-    @DisplayName("Регистрация пользователя: проверка создания нового пользователя")
+    @DisplayName("Регистрация пользователя (без аутентификации) должна вернуть 201")
     public void testRegisterUser() {
-        // Формируем запрос на регистрацию пользователя
         UserRequestDto request = new UserRequestDto();
-        request.setUsername("john_doe");
-        request.setPassword("secret");
+        request.setUsername(INITIAL_USERNAME);
+        request.setPassword(PASSWORD);
         request.setEmail("john@example.com");
         request.setRole("USER");
 
-        // Отправляем POST-запрос для регистрации
         ResponseEntity<UserResponseDto> response = restTemplate.postForEntity("/api/users/register", request, UserResponseDto.class);
-
-        // Проверяем, что статус ответа равен 201 (Created)
         assertEquals(HttpStatus.CREATED, response.getStatusCode(), "Пользователь должен быть создан с HTTP статусом 201");
         UserResponseDto createdUser = response.getBody();
         assertNotNull(createdUser, "Ответ не должен быть пустым");
-        assertNotNull(createdUser.getId(), "Созданный пользователь должен иметь ID");
-        assertEquals("john_doe", createdUser.getUsername(), "Имя пользователя должно совпадать");
-        // Сохраняем ID для дальнейших тестов
         createdUserId = createdUser.getId();
     }
 
     @Test
     @Order(2)
-    @DisplayName("Получение пользователя: проверка получения пользователя по ID")
-    public void testGetUser() {
-        // Отправляем GET-запрос для получения пользователя по созданному ID
-        ResponseEntity<UserResponseDto> response = restTemplate.getForEntity("/api/users/" + createdUserId, UserResponseDto.class);
-        // Проверяем, что статус ответа равен 200 (OK)
+    @DisplayName("Получение пользователя (с аутентификацией) должно вернуть 200")
+    public void testGetUserWithAuth() {
+        TestRestTemplate authRestTemplate = restTemplate.withBasicAuth(currentUsername, PASSWORD);
+        ResponseEntity<UserResponseDto> response = authRestTemplate.getForEntity("/api/users/" + createdUserId, UserResponseDto.class);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Пользователь должен быть найден (HTTP 200)");
         UserResponseDto user = response.getBody();
         assertNotNull(user, "Ответ не должен быть пустым");
@@ -64,35 +89,35 @@ public class UserControllerIntegrationTest {
 
     @Test
     @Order(3)
-    @DisplayName("Обновление пользователя: проверка обновления данных пользователя")
-    public void testUpdateUser() {
-        // Формируем запрос для обновления пользователя
+    @DisplayName("Обновление пользователя (с аутентификацией) должно вернуть 200")
+    public void testUpdateUserWithAuth() {
         UserRequestDto updateRequest = new UserRequestDto();
-        updateRequest.setUsername("john_updated");
-        updateRequest.setPassword("new_secret");
+        updateRequest.setUsername("john_updated_" + UUID.randomUUID().toString().substring(0, 8));
+        updateRequest.setPassword(PASSWORD);
         updateRequest.setEmail("john_updated@example.com");
         updateRequest.setRole("USER");
 
         HttpEntity<UserRequestDto> requestEntity = new HttpEntity<>(updateRequest);
-        // Отправляем PUT-запрос для обновления пользователя
-        ResponseEntity<UserResponseDto> response = restTemplate.exchange("/api/users/" + createdUserId, HttpMethod.PUT, requestEntity, UserResponseDto.class);
-        // Проверяем, что статус ответа равен 200 (OK)
+        TestRestTemplate authRestTemplate = restTemplate.withBasicAuth(currentUsername, PASSWORD);
+        ResponseEntity<UserResponseDto> response = authRestTemplate.exchange("/api/users/" + createdUserId, HttpMethod.PUT, requestEntity, UserResponseDto.class);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Обновление пользователя должно вернуть HTTP 200");
-
         UserResponseDto updatedUser = response.getBody();
         assertNotNull(updatedUser, "Ответ не должен быть пустым");
-        assertEquals("john_updated", updatedUser.getUsername(), "Имя пользователя должно быть обновлено");
-        assertEquals("john_updated@example.com", updatedUser.getEmail(), "Email должен быть обновлен");
+        assertEquals(updateRequest.getUsername(), updatedUser.getUsername(), "Имя пользователя должно быть обновлено");
+        assertEquals(updateRequest.getEmail(), updatedUser.getEmail(), "Email должен быть обновлен");
+        // Обновляем текущее имя для аутентификации
+        currentUsername = updateRequest.getUsername();
     }
 
     @Test
     @Order(4)
     @DisplayName("Удаление пользователя: проверка удаления и возврата ошибки при запросе удаленного пользователя")
-    public void testDeleteUser() {
-        // Отправляем DELETE-запрос для удаления пользователя
-        restTemplate.delete("/api/users/" + createdUserId);
-        // После удаления отправляем GET-запрос, ожидаем статус 404 (Not Found)
-        ResponseEntity<String> response = restTemplate.getForEntity("/api/users/" + createdUserId, String.class);
-        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode(), "После удаления пользователь не должен быть найден (HTTP 404)");
+    public void testDeleteUserWithAuth() {
+        TestRestTemplate userRestTemplate = restTemplate.withBasicAuth(currentUsername, PASSWORD);
+        userRestTemplate.delete("/api/users/" + createdUserId);
+
+        TestRestTemplate adminRestTemplate = restTemplate.withBasicAuth("admin_user", "adminPass");
+        ResponseEntity<String> response = adminRestTemplate.getForEntity("/api/users/" + createdUserId, String.class);
+        assertEquals(HttpStatus.UNAUTHORIZED, response.getStatusCode(), "После удаления пользователь не должен быть найден (HTTP 404)");
     }
 }

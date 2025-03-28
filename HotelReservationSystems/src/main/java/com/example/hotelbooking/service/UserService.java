@@ -3,6 +3,7 @@ package com.example.hotelbooking.service;
 import com.example.hotelbooking.entity.User;
 import com.example.hotelbooking.repository.UserRepository;
 import jakarta.persistence.EntityNotFoundException;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -11,9 +12,11 @@ import java.util.List;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     // Создание нового пользователя с проверкой на дубликаты
@@ -21,6 +24,7 @@ public class UserService {
         if (userRepository.existsByUsernameOrEmail(user.getUsername(), user.getEmail())) {
             throw new IllegalArgumentException("Пользователь с таким именем или email уже существует");
         }
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
         return userRepository.save(user);
     }
 
@@ -38,16 +42,21 @@ public class UserService {
     // Обновление данных пользователя (при необходимости)
     public User updateUser(Long id, User userData) {
         User existingUser = getUserById(id);
-        // Можно обновлять имя, email и пароль (роль можно оставить без изменений или разрешить обновление)
         existingUser.setUsername(userData.getUsername());
         existingUser.setEmail(userData.getEmail());
-        existingUser.setPassword(userData.getPassword());
+        // ВАЖНО: повторное шифрование пароля, чтобы сохранить его в формате BCrypt
+        existingUser.setPassword(passwordEncoder.encode(userData.getPassword()));
         existingUser.setRole(userData.getRole());
         return userRepository.save(existingUser);
     }
 
+
     // Удаление пользователя
     public void deleteUser(Long id) {
+        if (!userRepository.existsById(id)) {
+            throw new EntityNotFoundException("Пользователь не найден с id: " + id);
+        }
         userRepository.deleteById(id);
+        userRepository.flush();
     }
 }

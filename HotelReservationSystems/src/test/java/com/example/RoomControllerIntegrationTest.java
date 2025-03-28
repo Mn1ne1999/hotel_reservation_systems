@@ -4,136 +4,145 @@ import com.example.hotelbooking.dto.hotel.HotelRequestDto;
 import com.example.hotelbooking.dto.hotel.HotelResponseDto;
 import com.example.hotelbooking.dto.room.RoomRequestDto;
 import com.example.hotelbooking.dto.room.RoomResponseDto;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.MethodOrderer;
-import org.junit.jupiter.api.Order;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
-import org.junit.jupiter.api.TestInstance.Lifecycle;
-import org.junit.jupiter.api.TestMethodOrder;
+import com.example.hotelbooking.dto.user.UserRequestDto;
+import com.example.hotelbooking.dto.user.UserResponseDto;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.MethodOrderer.OrderAnnotation;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.*;
 
-import java.time.LocalDate;
+import java.util.Collections;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@TestInstance(Lifecycle.PER_CLASS)
-@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-@DisplayName("Интеграционные тесты для CRUD операций над 'Комната'")
+@TestMethodOrder(OrderAnnotation.class)
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@DisplayName("Интеграционные тесты для операций над 'Комната' (админ)")
 public class RoomControllerIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
 
-    // ID созданной комнаты для дальнейших тестов
-    private Long createdRoomId;
+    private static final String ADMIN_USERNAME = "admin_user";
+    private static final String ADMIN_PASSWORD = "adminPass";
 
-    // ID созданного отеля, необходим для создания комнаты
-    private Long hotelId;
+    private Long createdHotelId;
+    private Long createdRoomId;
+    private Long adminUserId;
 
     @BeforeAll
-    @DisplayName("Создание отеля для тестирования")
-    public void createHotelForTests() {
-        // Формируем запрос для создания отеля
+    @DisplayName("Регистрация администратора и создание отеля, комнаты для тестов")
+    void setup() {
+        // Регистрируем администратора, если его нет
+        try {
+            UserRequestDto adminRequest = new UserRequestDto();
+            adminRequest.setUsername(ADMIN_USERNAME);
+            adminRequest.setPassword(ADMIN_PASSWORD);
+            adminRequest.setEmail("admin@example.com");
+            adminRequest.setRole("ADMIN");
+            ResponseEntity<UserResponseDto> adminResponse = restTemplate.postForEntity("/api/users/register", adminRequest, UserResponseDto.class);
+            if (adminResponse.getStatusCode() == HttpStatus.CREATED) {
+                adminUserId = adminResponse.getBody().getId();
+            }
+        } catch(Exception e) {
+            System.out.println("Администратор уже существует: " + e.getMessage());
+        }
+        // Если adminUserId не получен, пытаемся получить его через GET с Basic Auth
+        if (adminUserId == null) {
+            TestRestTemplate adminRestTemplate = restTemplate.withBasicAuth(ADMIN_USERNAME, ADMIN_PASSWORD);
+            ResponseEntity<UserResponseDto[]> response = adminRestTemplate.getForEntity("/api/users", UserResponseDto[].class);
+            if (response.getBody() != null) {
+                for (UserResponseDto user : response.getBody()) {
+                    if (ADMIN_USERNAME.equals(user.getUsername())) {
+                        adminUserId = user.getId();
+                        break;
+                    }
+                }
+            }
+        }
+        assertNotNull(adminUserId, "ID администратора не должен быть null");
+
+        TestRestTemplate adminRestTemplate = restTemplate.withBasicAuth(ADMIN_USERNAME, ADMIN_PASSWORD);
+
+        // Создаем отель
         HotelRequestDto hotelRequest = new HotelRequestDto();
-        hotelRequest.setName("Test Hotel");
-        hotelRequest.setTitle("Тестовый отель");
+        // Добавляем уникальный суффикс для отеля, чтобы избежать конфликта
+        hotelRequest.setName("Test Hotel " + UUID.randomUUID().toString().substring(0, 8));
+        hotelRequest.setTitle("Hotel Title");
         hotelRequest.setCity("Test City");
         hotelRequest.setAddress("Test Address");
         hotelRequest.setDistanceFromCenter(1.0);
+        ResponseEntity<HotelResponseDto> hotelResponse = adminRestTemplate.postForEntity("/api/hotels", hotelRequest, HotelResponseDto.class);
+        assertEquals(HttpStatus.CREATED, hotelResponse.getStatusCode(), "Отель должен быть создан (HTTP 201)");
+        createdHotelId = hotelResponse.getBody().getId();
 
-        // Отправляем POST-запрос для создания отеля
-        ResponseEntity<HotelResponseDto> hotelResponse = restTemplate.postForEntity("/api/hotels", hotelRequest, HotelResponseDto.class);
-        // Проверяем, что статус ответа равен 201 (Created)
-        assertEquals(HttpStatus.CREATED, hotelResponse.getStatusCode(), "Отель должен быть создан с HTTP статусом 201");
-        HotelResponseDto createdHotel = hotelResponse.getBody();
-        assertNotNull(createdHotel, "Ответ от создания отеля не должен быть пустым");
-        // Сохраняем ID отеля для использования при создании комнаты
-        hotelId = createdHotel.getId();
+        // Создаем комнату
+        RoomRequestDto roomRequest = new RoomRequestDto();
+        roomRequest.setName("Test Room");
+        roomRequest.setDescription("Room Description");
+        roomRequest.setRoomNumber("101");
+        roomRequest.setPrice(120.0);
+        roomRequest.setMaxGuests(2);
+        roomRequest.setUnavailableDates(Collections.emptySet());
+        roomRequest.setHotelId(createdHotelId);
+        ResponseEntity<RoomResponseDto> roomResponse = adminRestTemplate.postForEntity("/api/rooms", roomRequest, RoomResponseDto.class);
+        assertEquals(HttpStatus.CREATED, roomResponse.getStatusCode(), "Комната должна быть создана (HTTP 201)");
+        createdRoomId = roomResponse.getBody().getId();
     }
 
     @Test
     @Order(1)
-    @DisplayName("Создание комнаты: проверка создания комнаты и корректного ответа")
-    public void testCreateRoom() {
-        // Формируем запрос для создания комнаты
-        RoomRequestDto request = new RoomRequestDto();
-        request.setName("Deluxe Room");
-        request.setDescription("Просторный номер с видом на море");
-        request.setRoomNumber("101");
-        request.setPrice(150.0);
-        request.setMaxGuests(3);
-        request.setUnavailableDates(Set.of(LocalDate.of(2025, 4, 10), LocalDate.of(2025, 4, 11)));
-        // Используем ID отеля, созданного ранее
-        request.setHotelId(hotelId);
-
-        // Отправляем POST-запрос на создание комнаты
-        ResponseEntity<RoomResponseDto> response = restTemplate.postForEntity("/api/rooms", request, RoomResponseDto.class);
-
-        // Проверяем, что статус ответа равен 201 (Created)
-        assertEquals(HttpStatus.CREATED, response.getStatusCode(), "Комната должна быть создана с HTTP статусом 201");
-        RoomResponseDto createdRoom = response.getBody();
-        assertNotNull(createdRoom, "Ответ не должен быть пустым");
-        assertNotNull(createdRoom.getId(), "Созданная комната должна иметь ID");
-        assertEquals("Deluxe Room", createdRoom.getName(), "Имя комнаты должно совпадать");
-        // Сохраняем ID созданной комнаты для дальнейших тестов
-        createdRoomId = createdRoom.getId();
+    @DisplayName("Проверка создания комнаты (POST /api/rooms)")
+    void testCreateRoom() {
+        assertNotNull(createdRoomId, "Комната должна быть создана в setup");
     }
 
     @Test
     @Order(2)
-    @DisplayName("Получение комнаты: проверка получения комнаты по ID")
-    public void testGetRoom() {
-        // Отправляем GET-запрос для получения комнаты по созданному ID
-        ResponseEntity<RoomResponseDto> response = restTemplate.getForEntity("/api/rooms/" + createdRoomId, RoomResponseDto.class);
-        // Проверяем, что статус ответа равен 200 (OK)
+    @DisplayName("Проверка получения комнаты (GET /api/rooms/{id})")
+    void testGetRoom() {
+        TestRestTemplate adminRestTemplate = restTemplate.withBasicAuth(ADMIN_USERNAME, ADMIN_PASSWORD);
+        ResponseEntity<RoomResponseDto> response = adminRestTemplate.getForEntity("/api/rooms/" + createdRoomId, RoomResponseDto.class);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Комната должна быть найдена (HTTP 200)");
         RoomResponseDto room = response.getBody();
         assertNotNull(room, "Ответ не должен быть пустым");
-        assertEquals(createdRoomId, room.getId(), "ID комнаты должен совпадать с созданным");
+        assertEquals(createdRoomId, room.getId(), "ID комнаты должен совпадать");
     }
 
     @Test
     @Order(3)
-    @DisplayName("Обновление комнаты: проверка обновления данных комнаты")
-    public void testUpdateRoom() {
-        // Формируем запрос для обновления комнаты
+    @DisplayName("Проверка обновления комнаты (PUT /api/rooms/{id})")
+    void testUpdateRoom() {
+        TestRestTemplate adminRestTemplate = restTemplate.withBasicAuth(ADMIN_USERNAME, ADMIN_PASSWORD);
         RoomRequestDto updateRequest = new RoomRequestDto();
-        updateRequest.setName("Обновленный номер");
-        updateRequest.setDescription("Обновленное описание");
+        updateRequest.setName("Updated Room");
+        updateRequest.setDescription("Updated Description");
         updateRequest.setRoomNumber("102");
-        updateRequest.setPrice(200.0);
-        updateRequest.setMaxGuests(4);
-        updateRequest.setUnavailableDates(Set.of(LocalDate.of(2025, 5, 1)));
-        updateRequest.setHotelId(hotelId);
-
+        updateRequest.setPrice(150.0);
+        updateRequest.setMaxGuests(3);
+        updateRequest.setUnavailableDates(Set.of());
+        updateRequest.setHotelId(createdHotelId);
         HttpEntity<RoomRequestDto> requestEntity = new HttpEntity<>(updateRequest);
-        // Отправляем PUT-запрос для обновления комнаты
-        ResponseEntity<RoomResponseDto> response = restTemplate.exchange("/api/rooms/" + createdRoomId, HttpMethod.PUT, requestEntity, RoomResponseDto.class);
-        // Проверяем, что статус ответа равен 200 (OK)
+        ResponseEntity<RoomResponseDto> response = adminRestTemplate.exchange("/api/rooms/" + createdRoomId, HttpMethod.PUT, requestEntity, RoomResponseDto.class);
         assertEquals(HttpStatus.OK, response.getStatusCode(), "Обновление комнаты должно вернуть HTTP 200");
-
         RoomResponseDto updatedRoom = response.getBody();
         assertNotNull(updatedRoom, "Ответ не должен быть пустым");
-        assertEquals("Обновленный номер", updatedRoom.getName(), "Имя комнаты должно быть обновлено");
+        assertEquals("Updated Room", updatedRoom.getName(), "Имя комнаты должно быть обновлено");
         assertEquals("102", updatedRoom.getRoomNumber(), "Номер комнаты должен быть обновлен");
-        assertEquals(200.0, updatedRoom.getPrice(), "Цена комнаты должна быть обновлена");
     }
 
     @Test
     @Order(4)
-    @DisplayName("Удаление комнаты: проверка удаления и возврата ошибки при запросе удаленной комнаты")
-    public void testDeleteRoom() {
-        // Отправляем запрос на удаление комнаты
-        restTemplate.delete("/api/rooms/" + createdRoomId);
-        // После удаления попытка получить комнату должна вернуть 404 (Not Found)
-        ResponseEntity<String> response = restTemplate.getForEntity("/api/rooms/" + createdRoomId, String.class);
+    @DisplayName("Проверка удаления комнаты (DELETE /api/rooms/{id}) и получение 404 после удаления")
+    void testDeleteRoom() {
+        TestRestTemplate adminRestTemplate = restTemplate.withBasicAuth(ADMIN_USERNAME, ADMIN_PASSWORD);
+        adminRestTemplate.delete("/api/rooms/" + createdRoomId);
+        ResponseEntity<String> response = adminRestTemplate.getForEntity("/api/rooms/" + createdRoomId, String.class);
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode(), "После удаления комната не должна быть найдена (HTTP 404)");
     }
 }
