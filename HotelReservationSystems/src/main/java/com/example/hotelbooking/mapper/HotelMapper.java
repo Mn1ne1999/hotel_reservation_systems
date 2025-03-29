@@ -9,16 +9,17 @@ import org.mapstruct.Mapping;
 @Mapper(componentModel = "spring")
 public interface HotelMapper {
 
-    // Из DTO (создание/редактирование) в сущность: игнорируем поля id, rating и numberOfRatings
+    // Из DTO (создание/редактирование) в сущность
+    // Явно указываем, что игнорируем поля id, rating, ratingCount
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "rating", ignore = true)
     @Mapping(target = "numberOfRatings", ignore = true)
     Hotel toEntity(HotelRequestDto requestDto);
 
-    // Из сущности в DTO (для редактирования) — если нужно
+    // Из сущности в DTO (запрос на редактирование) — если нужно
     HotelRequestDto toRequestDto(Hotel hotel);
 
     // Из сущности в DTO (полный ответ)
-    @Mapping(target = "ratingCount", source = "numberOfRatings")
+    @Mapping(target = "id", source = "id")
     HotelResponseDto toResponseDto(Hotel hotel);
 }
