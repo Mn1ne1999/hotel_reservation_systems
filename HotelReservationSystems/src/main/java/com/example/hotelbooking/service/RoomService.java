@@ -5,8 +5,10 @@ import com.example.hotelbooking.entity.Room;
 import com.example.hotelbooking.repository.HotelRepository;
 import com.example.hotelbooking.repository.RoomRepository;
 import jakarta.persistence.EntityNotFoundException;
+import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Service;
-
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import java.util.List;
 
 @Service
@@ -61,5 +63,9 @@ public class RoomService {
     // Удаление комнаты
     public void deleteRoom(Long id) {
         roomRepository.deleteById(id);
+    }
+
+    public Page<Room> getRoomsFiltered(Pageable pageable, Specification<Room> spec) {
+        return roomRepository.findAll(spec, pageable);
     }
 }
