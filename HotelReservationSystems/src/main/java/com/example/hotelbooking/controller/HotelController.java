@@ -7,6 +7,7 @@ import com.example.hotelbooking.dto.hotel.RatingUpdateRequestDto;
 import com.example.hotelbooking.entity.Hotel;
 import com.example.hotelbooking.mapper.HotelMapper;
 import com.example.hotelbooking.service.HotelService;
+import com.example.hotelbooking.specification.HotelSpecification;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -106,4 +107,46 @@ public class HotelController {
 
         return ResponseEntity.ok(response);
     }
+
+    @GetMapping("/search")
+    public ResponseEntity<PagedResponseDto<HotelResponseDto>> searchHotels(
+            @RequestParam(required = false) Long id,
+            @RequestParam(required = false) String name,
+            @RequestParam(required = false) String title,
+            @RequestParam(required = false) String city,
+            @RequestParam(required = false) String address,
+            @RequestParam(required = false) Double distance,
+            @RequestParam(required = false) Double rating,
+            @RequestParam(required = false) Integer numberOfRatings,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+
+        // Построение спецификации
+        org.springframework.data.jpa.domain.Specification<Hotel> spec =
+                org.springframework.data.jpa.domain.Specification.where(HotelSpecification.hasId(id))
+                        .and(HotelSpecification.hasName(name))
+                        .and(HotelSpecification.hasTitle(title))
+                        .and(HotelSpecification.hasCity(city))
+                        .and(HotelSpecification.hasAddress(address))
+                        .and(HotelSpecification.hasDistance(distance))
+                        .and(HotelSpecification.hasRating(rating))
+                        .and(HotelSpecification.hasNumberOfRatings(numberOfRatings));
+
+        // Получаем постраничный результат
+        Page<Hotel> hotelPage = hotelService.getHotelsBySpec(spec, PageRequest.of(page, size));
+
+        List<HotelResponseDto> content = hotelPage.getContent().stream()
+                .map(hotelMapper::toResponseDto)
+                .collect(Collectors.toList());
+
+        PagedResponseDto<HotelResponseDto> response = new PagedResponseDto<>();
+        response.setContent(content);
+        response.setTotalElements(hotelPage.getTotalElements());
+        response.setTotalPages(hotelPage.getTotalPages());
+        response.setCurrentPage(page);
+        response.setPageSize(size);
+
+        return ResponseEntity.ok(response);
+    }
+
 }

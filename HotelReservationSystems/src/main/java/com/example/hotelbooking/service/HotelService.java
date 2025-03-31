@@ -72,4 +72,9 @@ public class HotelService {
     public Page<Hotel> getHotelsPage(Pageable pageable) {
         return hotelRepository.findAll(pageable);
     }
+
+    @Transactional(readOnly = true)
+    public Page<Hotel> getHotelsBySpec(org.springframework.data.jpa.domain.Specification<Hotel> spec, Pageable pageable) {
+        return hotelRepository.findAll(spec, pageable);
+    }
 }
